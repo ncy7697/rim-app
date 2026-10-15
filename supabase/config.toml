@@ -1,0 +1,7 @@
+project_id = "qxqbctognoguixstlfdh"
+
+[functions.send-push]
+verify_jwt = false
+
+[functions.login-kakao]
+verify_jwt = false

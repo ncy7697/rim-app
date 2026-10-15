@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "922541516627",
+    "project_id": "rim-app-e5bb4",
+    "storage_bucket": "rim-app-e5bb4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:922541516627:android:0cb98a8d000f210fdf63a6",
+        "android_client_info": {
+          "package_name": "com.ncy.rim"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC1_q7fkfcyZw8IP9daopL-dMXSBirfVVk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

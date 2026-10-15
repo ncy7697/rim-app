@@ -1,0 +1,2 @@
+[functions.login-kakao]
+verify_jwt = false

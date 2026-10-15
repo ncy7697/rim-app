@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Pretendard Variable", Pretendard, "Noto Sans KR", system-ui, sans-serif;
+  --color-ink: #101828;
+  --color-muted: #667085;
+  --color-canvas: #f4f5f7;
+  --color-line: #e4e7ec;
+  --color-brand: #c2410c;
+  --color-brand-dark: #9a3412;
+  --color-navy: #0f172a;
+  --color-navy-2: #1e293b;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0f172a;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  text-align: left;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+.bb-screen {
+  @apply flex flex-col min-h-full bg-canvas text-ink;
+}
+
+.bb-header {
+  @apply sticky top-0 z-20 flex items-center gap-3 px-5 py-4 pr-14 bg-white/90 backdrop-blur-md border-b border-line;
+}
+
+.bb-icon-btn {
+  @apply w-10 h-10 shrink-0 rounded-xl bg-white border border-line text-navy flex items-center justify-center cursor-pointer hover:bg-canvas transition-colors;
+}
+
+.bb-card {
+  @apply bg-white rounded-2xl border border-line shadow-[0_1px_2px_rgba(16,24,40,0.04)];
+}
+
+.bb-label {
+  @apply block text-[11px] font-semibold tracking-wide text-muted mb-1.5;
+}
+
+.bb-input {
+  @apply w-full px-3.5 py-3 bg-white rounded-xl border border-line text-sm text-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand;
+}
+
+.bb-btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed w-full py-3.5 bg-navy text-white hover:bg-navy-2;
+}
+
+.bb-btn-accent {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed w-full py-3.5 bg-brand text-white hover:bg-brand-dark;
+}
+
+.bb-btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed py-3 px-4 bg-white border border-line text-ink hover:bg-canvas;
+}
+
+.bb-btn-danger {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed py-2 px-3 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs;
+}
+
+.bb-chip {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold;
+}
+
+.bb-hero-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}

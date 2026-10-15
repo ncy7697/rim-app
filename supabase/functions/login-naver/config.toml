@@ -1,0 +1,2 @@
+[functions.login-naver]
+verify_jwt = false

@@ -1,0 +1,59 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Env (keep .env.example)
+.env
+.env.*
+!.env.example
+
+# Firebase Admin / secrets (앱에 넣지 말 것)
+*firebase-adminsdk*.json
+firebase-service-account.json
+FIREBASE_SERVICE_ACCOUNT_JSON.json
+FIREBASE_SERVICE_ACCOUNT_JSON
+.firebase-secrets.env
+kakao-fn-out.txt
+*.pem
+*.p12
+*.jks
+*.keystore
+
+# Supabase CLI local
+supabase/.temp/
+
+# Android / iOS build
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/captures/
+android/*.iml
+*.apk
+*.aab
+*.ap_
+ios/App/Pods/
+ios/DerivedData/
+
+# Editor / local
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.cursor/
