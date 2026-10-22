@@ -419,7 +419,7 @@ export default function MainScreen() {
   };
 
   const tabBar = (
-    <nav className="z-30 flex shrink-0 items-center justify-around border-t border-line bg-white/95 px-6 py-2 backdrop-blur-md">
+    <nav className="bb-tabbar z-30 flex shrink-0 items-center justify-around border-t border-line bg-white/95 px-6 py-2 backdrop-blur-md">
       <button
         type="button"
         onClick={() => goTab('home')}
@@ -466,9 +466,9 @@ export default function MainScreen() {
   const withNav = (node: ReactNode) => (
     <div className="relative flex h-full min-h-0 flex-1 flex-col bg-canvas">
       {currentUser && viewState !== 'main' && viewState !== 'login' && viewState !== 'register' && (
-        <div className="absolute right-5 top-3.5 z-50">{bell}</div>
+        <div className="bb-nav-bell absolute right-5 top-3.5 z-50">{bell}</div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto">{node}</div>
+      <div className="bb-nav-scroll min-h-0 flex-1 overflow-y-auto">{node}</div>
       {tabBar}
     </div>
   );

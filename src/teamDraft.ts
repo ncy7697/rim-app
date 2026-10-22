@@ -179,7 +179,10 @@ export function placeOnCourt(
     benchOrder: index + 1,
   }))
 
-  return [...starters, ...bench]
+  return [...starters, ...bench].map((player, index) => ({
+    ...player,
+    pickOrder: index + 1,
+  }))
 }
 
 export function generateBalancedTeams(pool: PoolPlayer[], teamCount: number, format: CourtFormat): LineupPlayer[] {
@@ -210,14 +213,23 @@ export function startDraftBoard(captains: PoolPlayer[], teamCount: number, forma
     isCaptain: true,
     isStarter: true,
     courtSlot: courtSlots(format)[0],
-    pickOrder: teamIndex + 1,
+    pickOrder: 1,
   }))
 }
 
-export function snakeTeamOrder(teamCount: number, pickIndex: number): number {
-  const round = Math.floor(pickIndex / teamCount)
-  const offset = pickIndex % teamCount
-  return round % 2 === 0 ? offset : teamCount - 1 - offset
+export function teamDraftQuota(totalPlayers: number, teamCount: number, teamIndex: number): number {
+  if (teamCount <= 0) return 0
+  const base = Math.floor(totalPlayers / teamCount)
+  const extra = totalPlayers % teamCount
+  return base + (teamIndex < extra ? 1 : 0)
+}
+
+export function sequentialDraftTeam(assigned: LineupPlayer[], teamCount: number, totalPlayers: number): number {
+  for (let index = 0; index < teamCount; index += 1) {
+    const have = assigned.filter((item) => item.teamIndex === index).length
+    if (have < teamDraftQuota(totalPlayers, teamCount, index)) return index
+  }
+  return Math.max(0, teamCount - 1)
 }
 
 export function applyDraftPick(
@@ -227,29 +239,25 @@ export function applyDraftPick(
   format: CourtFormat,
   pickOrder: number
 ): LineupPlayer[] {
-  const withPick: LineupPlayer[] = [
+  const team = lineupRotationOrder(
+    board.filter((item) => item.teamIndex === teamIndex),
+    format
+  )
+  const slots = courtSlots(format)
+  const starterSlots = team.filter((item) => item.isStarter).length
+  const isStarter = starterSlots < starterCount(format)
+  return [
     ...board,
     {
       ...player,
       teamIndex,
       isCaptain: false,
-      isStarter: false,
-      pickOrder,
+      isStarter,
+      courtSlot: isStarter ? slots[starterSlots] : undefined,
+      benchOrder: isStarter ? undefined : team.filter((item) => !item.isStarter).length + 1,
+      pickOrder: pickOrder || team.length + 1,
     },
   ]
-  const teamCount = Math.max(teamIndex + 1, ...withPick.map((item) => item.teamIndex + 1))
-  const teams = Array.from({ length: teamCount }, (_, index) =>
-    withPick.filter((item) => item.teamIndex === index)
-  )
-  const captains = new Set(withPick.filter((item) => item.isCaptain).map((item) => item.key))
-  return teams.flatMap((team, index) => {
-    const picks = withPick.filter((item) => item.teamIndex === index)
-    return placeOnCourt(team, index, format, captains).map((placed) => ({
-      ...placed,
-      pickOrder: picks.find((item) => item.key === placed.key)?.pickOrder,
-      isCaptain: captains.has(placed.key),
-    }))
-  })
 }
 
 export function playersOfTeam(players: LineupPlayer[], teamIndex: number): LineupPlayer[] {
@@ -291,6 +299,9 @@ export function threeTeamMatchup(round: number): { home: number; away: number; r
 export function lineupRotationOrder(players: LineupPlayer[], format: CourtFormat): LineupPlayer[] {
   const slots = [...courtSlots(format)]
   return [...players].sort((a, b) => {
+    if (a.pickOrder != null && b.pickOrder != null && a.pickOrder !== b.pickOrder) {
+      return a.pickOrder - b.pickOrder
+    }
     const rank = (player: LineupPlayer) => {
       if (player.isStarter) {
         const index = player.courtSlot ? slots.indexOf(player.courtSlot as (typeof slots)[number]) : -1
@@ -300,6 +311,72 @@ export function lineupRotationOrder(players: LineupPlayer[], format: CourtFormat
     }
     return rank(a) - rank(b) || a.name.localeCompare(b.name, 'ko')
   })
+}
+
+export function applyTeamRosterOrder(
+  players: LineupPlayer[],
+  teamIndex: number,
+  ordered: LineupPlayer[],
+  format: CourtFormat
+): LineupPlayer[] {
+  const slots = courtSlots(format)
+  const courtSize = starterCount(format)
+  const captains = new Set(players.filter((item) => item.isCaptain).map((item) => item.key))
+  const updated = ordered.map((player, index) => {
+    const starter = index < courtSize
+    return {
+      ...player,
+      teamIndex,
+      isCaptain: captains.has(player.key),
+      isStarter: starter,
+      courtSlot: starter ? slots[index] : undefined,
+      benchOrder: starter ? undefined : index - courtSize + 1,
+      pickOrder: index + 1,
+    }
+  })
+  return [...players.filter((item) => item.teamIndex !== teamIndex), ...updated]
+}
+
+export function moveTeamOrder(
+  players: LineupPlayer[],
+  key: string,
+  direction: -1 | 1,
+  format: CourtFormat
+): LineupPlayer[] {
+  const target = players.find((item) => item.key === key)
+  if (!target) return players
+  const ordered = lineupRotationOrder(
+    players.filter((item) => item.teamIndex === target.teamIndex),
+    format
+  )
+  const index = ordered.findIndex((item) => item.key === key)
+  return reorderTeam(players, target.teamIndex, index, index + direction, format)
+}
+
+export function reorderTeam(
+  players: LineupPlayer[],
+  teamIndex: number,
+  fromIndex: number,
+  toIndex: number,
+  format: CourtFormat
+): LineupPlayer[] {
+  const ordered = lineupRotationOrder(
+    players.filter((item) => item.teamIndex === teamIndex),
+    format
+  )
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= ordered.length ||
+    toIndex >= ordered.length
+  ) {
+    return players
+  }
+  const next = [...ordered]
+  const [moved] = next.splice(fromIndex, 1)
+  next.splice(toIndex, 0, moved)
+  return applyTeamRosterOrder(players, teamIndex, next, format)
 }
 
 export function onCourtForQuarter<T>(ordered: T[], courtSize: number, quarter: number): T[] {

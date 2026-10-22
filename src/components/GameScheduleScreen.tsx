@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLandscape } from '../useLandscape'
 import { supabase } from '../supabaseClient'
-import { BackButton, EmptyCard, Spinner } from './ui'
+import { BackButton, EmptyCard, SmoothFold, Spinner } from './ui'
 import TeamComposeScreen from './TeamComposeScreen'
 import GameScoreboard from './GameScoreboard'
 import EventContestBoard from './EventContestBoard'
@@ -72,6 +73,7 @@ import {
   isShootingRelay,
   type EventTypeId,
 } from '../clubEvents'
+import { difficultyLabel, findTactic, pickRecommendedTactic, type GameTactic } from '../gameTactics'
 
 type View = 'list' | 'form' | 'detail' | 'teams'
 type ListTab = 'upcoming' | 'past' | 'exchange'
@@ -111,6 +113,8 @@ export default function GameScheduleScreen({
   const [stats, setStats] = useState<PlayerStat[]>([])
   const [lineup, setLineup] = useState<LineupBoard | null>(null)
   const [lineupTeam, setLineupTeam] = useState(0)
+  const [lineupOpen, setLineupOpen] = useState(false)
+  const landscape = useLandscape()
   const [videoUrl, setVideoUrl] = useState('')
   const [form, setForm] = useState({
     title: '',
@@ -129,6 +133,7 @@ export default function GameScheduleScreen({
     eventSetCount: 3,
     eventAttemptCount: 5,
     eventTimeLimitMin: 3,
+    recommendedTacticId: '',
   })
 
   const selected = games.find((item) => item.id === selectedId) || null
@@ -248,6 +253,8 @@ export default function GameScheduleScreen({
   }
 
   useEffect(() => {
+    setLineupOpen(false)
+    setLineupTeam(0)
     if (!selectedId) {
       setLineup(null)
       return
@@ -280,6 +287,7 @@ export default function GameScheduleScreen({
       eventSetCount: 3,
       eventAttemptCount: 5,
       eventTimeLimitMin: 3,
+      recommendedTacticId: pickRecommendedTactic(games.map((item) => item.recommendedTacticId || '').filter(Boolean)).id,
     })
     setSelectedId(null)
     setView('form')
@@ -307,6 +315,7 @@ export default function GameScheduleScreen({
       eventSetCount: clampEventSets(game.eventSetCount || 3),
       eventAttemptCount: clampEventAttempts(game.eventAttemptCount || 5),
       eventTimeLimitMin: clampRelayMinutes(game.eventSetCount || 3),
+      recommendedTacticId: game.recommendedTacticId || '',
     })
     setSelectedId(game.id)
     setView('form')
@@ -400,6 +409,12 @@ export default function GameScheduleScreen({
         isLive: existing?.isLive || false,
         createdBy: existing?.createdBy || userId,
         updatedAt: new Date().toISOString(),
+        recommendedTacticId:
+          form.matchKind === 'event'
+            ? undefined
+            : form.recommendedTacticId ||
+              existing?.recommendedTacticId ||
+              pickRecommendedTactic(games.map((item) => item.recommendedTacticId || '').filter(Boolean)).id,
       }
       const isNew = !existing
       const saved = await saveClubGame(
@@ -464,6 +479,18 @@ export default function GameScheduleScreen({
     [members, rsvps]
   )
 
+  const scoreboardLandscape =
+    landscape && view === 'detail' && Boolean(selected) && selected?.matchKind !== 'event'
+
+  useEffect(() => {
+    const root = document.documentElement
+    if (scoreboardLandscape) root.dataset.scoreboardLandscape = '1'
+    else delete root.dataset.scoreboardLandscape
+    return () => {
+      delete root.dataset.scoreboardLandscape
+    }
+  }, [scoreboardLandscape])
+
   if (loading) {
     return (
       <div className="bb-screen">
@@ -489,6 +516,25 @@ export default function GameScheduleScreen({
           void refreshLineup(selected.id)
         }}
       />
+    )
+  }
+
+  if (scoreboardLandscape && selected) {
+    return (
+      <div className="h-full min-h-0 bg-navy">
+        <GameScoreboard
+          game={selected}
+          stats={stats}
+          canEdit={canEdit && !isPastGame(selected)}
+          ended={isPastGame(selected)}
+          rotation={rotationTeams}
+          layout="fill"
+          onChange={(nextGame, nextStats) => {
+            setGames((prev) => prev.map((item) => (item.id === nextGame.id ? nextGame : item)))
+            setStats(nextStats)
+          }}
+        />
+      </div>
     )
   }
 
@@ -834,6 +880,18 @@ export default function GameScheduleScreen({
                 자주 가는 체육관은 별표로 저장해 두고 바로 고를 수 있습니다. 최대 {MAX_FAVORITE_VENUES}곳입니다.
               </p>
             </div>
+            {form.matchKind !== 'event' && (
+              <TacticRecommendCard
+                tactic={findTactic(form.recommendedTacticId)}
+                canRefresh={!selected}
+                onRefresh={() =>
+                  setForm({
+                    ...form,
+                    recommendedTacticId: pickRecommendedTactic([form.recommendedTacticId]).id,
+                  })
+                }
+              />
+            )}
             <div>
               <label className="bb-label">주의사항</label>
               <textarea className="bb-input min-h-24" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="준비물, 지각 규정, 주차 등" />
@@ -868,6 +926,11 @@ export default function GameScheduleScreen({
                   {selected.opponentContact ? <p className="text-xs text-ink">대표 {selected.opponentContact}</p> : null}
                   {selected.opponentPhone ? <p className="text-xs text-ink">연락처 {selected.opponentPhone}</p> : null}
                   {selected.opponentRegion ? <p className="text-xs text-ink">지역 {selected.opponentRegion}</p> : null}
+                </div>
+              )}
+              {selected.matchKind !== 'event' && findTactic(selected.recommendedTacticId) && (
+                <div className="pt-1">
+                  <TacticRecommendCard tactic={findTactic(selected.recommendedTacticId)} />
                 </div>
               )}
               {selected.notes && (
@@ -955,52 +1018,66 @@ export default function GameScheduleScreen({
               />
               )
             ) : lineup ? (
-              <section className="bb-card p-4 space-y-3">
-                <div>
-                  <p className="text-xs font-semibold text-muted uppercase tracking-wide">적용된 팀 구성</p>
-                  <p className="text-sm font-semibold mt-1">
-                    {modeLabel(lineup.mode)} · {lineup.format} · {lineup.teamCount}팀
-                    {lineup.draftComplete ? '' : ' · 드래프트 진행 중'}
-                  </p>
-                  {lineup.teamCount === 3 && (
-                    <p className="text-[11px] text-muted mt-1">
-                      3팀 롤테이션 · 한 라운드에 2팀 경기, 1팀 휴식 (A–B / B–C / C–A) · 각 라운드 {selected.quarterCount || 4}쿼터
+              <section className="bb-card p-4">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+                  aria-expanded={lineupOpen}
+                  onClick={() => setLineupOpen((value) => !value)}
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-muted uppercase tracking-wide">적용된 팀 구성</p>
+                    <p className="text-sm font-semibold mt-1">
+                      {modeLabel(lineup.mode)} · {lineup.format} · {lineup.teamCount}팀
+                      {lineup.draftComplete ? '' : ' · 드래프트 진행 중'}
                     </p>
-                  )}
-                </div>
-                <div className="flex gap-1.5">
-                  {Array.from({ length: lineup.teamCount }, (_, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      className={`flex-1 py-2 rounded-xl text-[11px] font-semibold border ${
-                        lineupTeam === index ? 'text-white border-transparent' : 'bg-white border-line'
-                      }`}
-                      style={lineupTeam === index ? { background: TEAM_TONES[index] } : undefined}
-                      onClick={() => setLineupTeam(index)}
-                    >
-                      {selected.matchKind === 'exchange' && lineup.teamCount === 1
-                        ? clubName || '우리 팀'
-                        : TEAM_LABELS[index]}
-                    </button>
-                  ))}
-                </div>
-                {(() => {
-                  const teamPlayers = lineup.players.filter((item) => item.teamIndex === lineupTeam)
-                  return (
-                    <>
+                  </div>
+                  <span className="text-[11px] font-semibold text-navy shrink-0">
+                    {lineupOpen ? '접기' : `펼치기 · ${lineup.players.length}명`}
+                  </span>
+                </button>
+                <SmoothFold open={lineupOpen}>
+                  <div className="space-y-3 pt-3">
+                    {lineup.teamCount === 3 && (
                       <p className="text-[11px] text-muted">
-                        베스트 {starterCount(lineup.format)} · 평균 평점 {teamRating(teamPlayers)} · {teamPlayers.length}명
+                        3팀 롤테이션 · 한 라운드에 2팀 경기, 1팀 휴식 (A–B / B–C / C–A) · 각 라운드 {selected.quarterCount || 4}쿼터
                       </p>
-                      <BasketballCourt format={lineup.format} players={teamPlayers} accent={TEAM_TONES[lineupTeam]} />
-                      <LineupRosterTable
-                        ordered={rotationTeams[lineupTeam]?.ordered || []}
-                        players={teamPlayers}
-                        accent={TEAM_TONES[lineupTeam]}
-                      />
-                    </>
-                  )
-                })()}
+                    )}
+                    <div className="flex gap-1.5">
+                      {Array.from({ length: lineup.teamCount }, (_, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          className={`flex-1 py-2 rounded-xl text-[11px] font-semibold border ${
+                            lineupTeam === index ? 'text-white border-transparent' : 'bg-white border-line'
+                          }`}
+                          style={lineupTeam === index ? { background: TEAM_TONES[index] } : undefined}
+                          onClick={() => setLineupTeam(index)}
+                        >
+                          {selected.matchKind === 'exchange' && lineup.teamCount === 1
+                            ? clubName || '우리 팀'
+                            : TEAM_LABELS[index]}
+                        </button>
+                      ))}
+                    </div>
+                    {(() => {
+                      const teamPlayers = lineup.players.filter((item) => item.teamIndex === lineupTeam)
+                      return (
+                        <>
+                          <p className="text-[11px] text-muted">
+                            베스트 {starterCount(lineup.format)} · 평균 평점 {teamRating(teamPlayers)} · {teamPlayers.length}명
+                          </p>
+                          <BasketballCourt format={lineup.format} players={teamPlayers} accent={TEAM_TONES[lineupTeam]} />
+                          <LineupRosterTable
+                            ordered={rotationTeams[lineupTeam]?.ordered || []}
+                            players={teamPlayers}
+                            accent={TEAM_TONES[lineupTeam]}
+                          />
+                        </>
+                      )
+                    })()}
+                  </div>
+                </SmoothFold>
               </section>
             ) : (
               <EmptyCard title="아직 팀 구성이 없습니다" description="팀 구성을 완료하면 이 경기 일정에 라인업이 표시됩니다." />
@@ -1131,6 +1208,35 @@ function LineupRosterTable({
           })}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function TacticRecommendCard({
+  tactic,
+  canRefresh,
+  onRefresh,
+}: {
+  tactic: GameTactic | null
+  canRefresh?: boolean
+  onRefresh?: () => void
+}) {
+  if (!tactic) return null
+  return (
+    <div className="rounded-xl border border-navy/15 bg-navy/[0.04] px-3.5 py-3 space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-navy">추천 전술</p>
+        {canRefresh && onRefresh && (
+          <button type="button" className="text-[11px] font-semibold text-navy" onClick={onRefresh}>
+            다시 추천
+          </button>
+        )}
+      </div>
+      <p className="text-sm font-semibold text-ink">{tactic.name}</p>
+      <p className="text-[11px] text-muted">
+        {tactic.categoryLabel} · {difficultyLabel(tactic.difficulty)}
+      </p>
+      <p className="text-xs leading-relaxed text-ink/80">{tactic.summary}</p>
     </div>
   )
 }

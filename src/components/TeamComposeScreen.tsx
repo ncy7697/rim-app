@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { supabase } from '../supabaseClient'
 import { BackButton, EmptyCard, Spinner } from './ui'
 import { isStaffRole } from '../clubMembership'
@@ -17,15 +17,16 @@ import {
   generateBalancedTeams,
   generatePositionTeams,
   groupLabel,
+  lineupRotationOrder,
   modeLabel,
-  moveBenchOrder,
+  reorderTeam,
   placeOnCourt,
   positionGroup,
   ratingFromRecord,
-  snakeTeamOrder,
+  sequentialDraftTeam,
   startDraftBoard,
+  teamDraftQuota,
   starterCount,
-  swapStarterWithBench,
   teamRating,
   type CourtFormat,
   type DraftMode,
@@ -88,7 +89,6 @@ export default function TeamComposeScreen({
   const [captainKeys, setCaptainKeys] = useState<string[]>([])
   const [board, setBoard] = useState<LineupBoard | null>(null)
   const [activeTeam, setActiveTeam] = useState(0)
-  const [swapStarter, setSwapStarter] = useState<string | null>(null)
 
   const today = new Date().toISOString().slice(0, 10)
   const targetDate = sessionDate || today
@@ -346,7 +346,9 @@ export default function TeamComposeScreen({
         setBoard(next)
         setActiveTeam(0)
         await persistBoard(next)
-        setMessage(`${captainsOrError.map((item) => item.name).join(', ')} 캡틴으로 드래프트를 시작했습니다. 아래에서 선수를 지명하세요.`)
+        setMessage(
+          `${captainsOrError.map((item) => item.name).join(', ')} 캡틴으로 드래프트를 시작했습니다. 한 팀 인원을 모두 고른 뒤 다음 팀으로 넘어갑니다.`
+        )
       })
     } catch (err: any) {
       setMessage(err.message || '드래프트를 시작하지 못했습니다.')
@@ -357,13 +359,13 @@ export default function TeamComposeScreen({
     if (!board || board.draftComplete || busyLabel) return
     try {
       await runBusy(`${player.name} 지명 중...`, async () => {
-        const teamIndex = snakeTeamOrder(board.teamCount, board.draftTurn)
+        const teamIndex = sequentialDraftTeam(board.players, board.teamCount, selectedPool.length)
         const players = applyDraftPick(board.players, player, teamIndex, board.format, board.draftTurn + board.teamCount + 1)
         const nextTurn = board.draftTurn + 1
         const complete = players.length >= selectedPool.length
         const next = { ...board, players, draftTurn: nextTurn, draftComplete: complete }
         setBoard(next)
-        setActiveTeam(snakeTeamOrder(board.teamCount, complete ? teamIndex : nextTurn))
+        setActiveTeam(complete ? teamIndex : sequentialDraftTeam(players, board.teamCount, selectedPool.length))
         await persistBoard(next)
       })
     } catch (err: any) {
@@ -371,24 +373,10 @@ export default function TeamComposeScreen({
     }
   }
 
-  const changeBench = async (key: string, direction: -1 | 1) => {
-    if (!board || !canEdit) return
-    const players = moveBenchOrder(board.players, key, direction)
+  const changeOrder = async (fromIndex: number, toIndex: number) => {
+    if (!board || !canEdit || fromIndex === toIndex) return
+    const players = reorderTeam(board.players, activeTeam, fromIndex, toIndex, board.format)
     const next = { ...board, players }
-    setBoard(next)
-    await persistBoard(next)
-  }
-
-  const handleSwap = async (key: string, starter: boolean) => {
-    if (!board || !canEdit) return
-    if (starter) {
-      setSwapStarter(key)
-      return
-    }
-    if (!swapStarter) return
-    const players = swapStarterWithBench(board.players, swapStarter, key)
-    const next = { ...board, players }
-    setSwapStarter(null)
     setBoard(next)
     await persistBoard(next)
   }
@@ -420,7 +408,11 @@ export default function TeamComposeScreen({
   }
 
   const currentTeamPlayers = board?.players.filter((item) => item.teamIndex === activeTeam) || []
-  const pickTeam = board && !board.draftComplete ? snakeTeamOrder(board.teamCount, board.draftTurn) : activeTeam
+  const pickTeam =
+    board && !board.draftComplete ? sequentialDraftTeam(board.players, board.teamCount, selectedPool.length) : activeTeam
+  const pickTeamNeed = board ? teamDraftQuota(selectedPool.length, board.teamCount, pickTeam) : 0
+  const pickTeamHave = board?.players.filter((item) => item.teamIndex === pickTeam).length || 0
+  const pickTeamLeft = Math.max(0, pickTeamNeed - pickTeamHave)
 
   const busy = Boolean(busyLabel) || saving
 
@@ -596,7 +588,10 @@ export default function TeamComposeScreen({
             <p className="text-sm font-semibold text-ink">
               {composeTeamLabel(pickTeam)} 지명 차례
             </p>
-            <p className="text-[11px] text-muted">남은 선수 {remainingDraft.length}명 · 스네이크 순서로 지명합니다.</p>
+            <p className="text-[11px] text-muted">
+              남은 선수 {remainingDraft.length}명 · {composeTeamLabel(pickTeam)} {pickTeamLeft}명
+              {board && pickTeam >= board.teamCount - 1 ? '을 고르면 드래프트가 끝납니다.' : '을 고른 뒤 다음 팀으로 넘어갑니다.'}
+            </p>
             {remainingDraft.length === 0 ? (
               <p className="text-xs text-muted">지명할 선수가 없습니다.</p>
             ) : (
@@ -651,38 +646,12 @@ export default function TeamComposeScreen({
                 )}
               </div>
               <BasketballCourt format={board.format} players={currentTeamPlayers} accent={TEAM_TONES[activeTeam]} />
-              <div className="space-y-1.5">
-                <p className="text-[11px] font-semibold text-muted uppercase tracking-wide">선발</p>
-                {currentTeamPlayers.filter((item) => item.isStarter).map((player) => (
-                  <PlayerRow
-                    key={player.key}
-                    player={player}
-                    canEdit={canEdit}
-                    selected={swapStarter === player.key}
-                    onSelect={() => void handleSwap(player.key, true)}
-                  />
-                ))}
-                <p className="text-[11px] font-semibold text-muted uppercase tracking-wide pt-2">교체 순번</p>
-                {currentTeamPlayers
-                  .filter((item) => !item.isStarter)
-                  .sort((a, b) => (a.benchOrder || 0) - (b.benchOrder || 0))
-                  .map((player) => (
-                    <PlayerRow
-                      key={player.key}
-                      player={player}
-                      canEdit={canEdit}
-                      selected={false}
-                      onSelect={() => void handleSwap(player.key, false)}
-                      onMove={(dir) => void changeBench(player.key, dir)}
-                    />
-                  ))}
-                {currentTeamPlayers.filter((item) => !item.isStarter).length === 0 && (
-                  <p className="text-xs text-muted">교체 선수가 없습니다.</p>
-                )}
-                {canEdit && swapStarter && (
-                  <p className="text-[11px] text-brand">선발을 선택했습니다. 교체 선수를 눌러 자리를 바꿉니다.</p>
-                )}
-              </div>
+              <RosterDragList
+                players={currentTeamPlayers}
+                format={board.format}
+                canEdit={canEdit && !busy}
+                onReorder={(from, to) => void changeOrder(from, to)}
+              />
             </section>
           </>
         )}
@@ -691,37 +660,131 @@ export default function TeamComposeScreen({
   )
 }
 
-function PlayerRow({
-  player,
+function RosterDragList({
+  players,
+  format,
   canEdit,
-  selected,
-  onSelect,
-  onMove,
+  onReorder,
 }: {
-  player: LineupPlayer
+  players: LineupPlayer[]
+  format: CourtFormat
   canEdit: boolean
-  selected: boolean
-  onSelect: () => void
-  onMove?: (direction: -1 | 1) => void
+  onReorder: (fromIndex: number, toIndex: number) => void
 }) {
+  const ordered = useMemo(() => lineupRotationOrder(players, format), [players, format])
+  const [drag, setDrag] = useState<{
+    from: number
+    over: number
+    originY: number
+    y: number
+    height: number
+  } | null>(null)
+  const dragRef = useRef(drag)
+  dragRef.current = drag
+  const gap = 6
+
+  const startDrag = (index: number, event: PointerEvent<HTMLButtonElement>) => {
+    if (!canEdit || ordered.length < 2) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const row = event.currentTarget.closest('[data-roster-row]') as HTMLElement | null
+    const next = {
+      from: index,
+      over: index,
+      originY: event.clientY,
+      y: event.clientY,
+      height: row?.offsetHeight || 56,
+    }
+    dragRef.current = next
+    setDrag(next)
+  }
+
+  const moveDrag = (event: PointerEvent<HTMLButtonElement>) => {
+    const current = dragRef.current
+    if (!current) return
+    const over = Math.max(
+      0,
+      Math.min(
+        ordered.length - 1,
+        Math.round(current.from + (event.clientY - current.originY) / (current.height + gap))
+      )
+    )
+    if (over === current.over && event.clientY === current.y) return
+    const next = { ...current, over, y: event.clientY }
+    dragRef.current = next
+    setDrag(next)
+  }
+
+  const endDrag = () => {
+    const current = dragRef.current
+    if (!current) return
+    dragRef.current = null
+    setDrag(null)
+    if (current.from !== current.over) onReorder(current.from, current.over)
+  }
+
+  const shiftFor = (index: number) => {
+    if (!drag || index === drag.from) return 0
+    if (drag.from < drag.over && index > drag.from && index <= drag.over) return -(drag.height + gap)
+    if (drag.from > drag.over && index >= drag.over && index < drag.from) return drag.height + gap
+    return 0
+  }
+
   return (
-    <div className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${selected ? 'border-navy bg-canvas' : 'border-line bg-white'}`}>
-      <button type="button" className="text-left min-w-0 flex-1" onClick={onSelect} disabled={!canEdit}>
-        <p className="text-sm font-semibold truncate">
-          {player.isStarter ? player.courtSlot : `${player.benchOrder}번`} {player.name}
-          {player.isCaptain ? ' · 캡틴' : ''}
-        </p>
+    <div className={`space-y-1.5 ${drag ? 'select-none' : ''}`}>
+      <p className="text-[11px] font-semibold text-muted uppercase tracking-wide">출전 순번</p>
+      {canEdit && (
         <p className="text-[11px] text-muted">
-          {player.position} · {groupLabel(player.group)} · 평점 {player.rating}
-          {player.source === 'guest' ? ' · 게스트' : ''}
+          왼쪽 손잡이를 드래그해 원하는 위치에 놓습니다. 앞쪽 {starterCount(format)}명이 선발입니다.
         </p>
-      </button>
-      {!player.isStarter && canEdit && onMove && (
-        <div className="flex gap-1">
-          <button type="button" className="bb-icon-btn w-8 h-8" onClick={() => onMove(-1)}>↑</button>
-          <button type="button" className="bb-icon-btn w-8 h-8" onClick={() => onMove(1)}>↓</button>
-        </div>
       )}
+      {ordered.map((player, index) => {
+        const isDragging = drag?.from === index
+        const shift = isDragging ? drag.y - drag.originY : shiftFor(index)
+        return (
+          <div
+            key={player.key}
+            data-roster-row
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
+              isDragging ? 'border-navy bg-white shadow-lg' : 'border-line bg-white'
+            }`}
+            style={{
+              transform: shift ? `translateY(${shift}px)` : undefined,
+              zIndex: isDragging ? 20 : undefined,
+              position: 'relative',
+              transition: isDragging ? 'none' : 'transform 120ms ease',
+            }}
+          >
+            {canEdit && (
+              <button
+                type="button"
+                aria-label={`${player.name} 순서 이동`}
+                className="flex h-10 w-8 shrink-0 cursor-grab touch-none flex-col items-center justify-center gap-0.5 text-muted active:cursor-grabbing"
+                disabled={ordered.length < 2}
+                onPointerDown={(event) => startDrag(index, event)}
+                onPointerMove={moveDrag}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+              >
+                <span className="block h-0.5 w-3.5 rounded-full bg-current" />
+                <span className="block h-0.5 w-3.5 rounded-full bg-current" />
+                <span className="block h-0.5 w-3.5 rounded-full bg-current" />
+              </button>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold truncate">
+                {(isDragging && drag ? drag.over : index) + 1}번 {player.name}
+                {player.isCaptain ? ' · 캡틴' : ''}
+              </p>
+              <p className="text-[11px] text-muted">
+                {player.isStarter ? `선발 ${player.courtSlot}` : '교체'} · {player.position} · {groupLabel(player.group)} · 평점 {player.rating}
+                {player.source === 'guest' ? ' · 게스트' : ''}
+              </p>
+            </div>
+          </div>
+        )
+      })}
+      {players.length === 0 && <p className="text-xs text-muted">이 팀 선수가 없습니다.</p>}
     </div>
   )
 }

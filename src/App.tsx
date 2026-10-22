@@ -27,7 +27,7 @@ export default function App() {
   }, [currentScreen]);
 
   return (
-    <div className="mx-auto flex h-[100dvh] max-w-md flex-col overflow-hidden bg-canvas shadow-[0_0_80px_rgba(0,0,0,0.25)]">
+    <div className="bb-app-shell mx-auto flex h-[100dvh] max-w-md flex-col overflow-hidden bg-canvas shadow-[0_0_80px_rgba(0,0,0,0.25)]">
       {currentScreen === 'welcome' ? (
         <div className="flex min-h-0 flex-1 flex-col bg-navy text-white">
           <div className="bb-hero-grid flex-1 flex flex-col px-7 pt-14 pb-8">

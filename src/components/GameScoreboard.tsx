@@ -21,6 +21,7 @@ import {
   type StatKind,
 } from '../clubGames'
 import { THREE_TEAM_ROUNDS, threeTeamMatchup, type RotationEntry, type RotationTeam } from '../teamDraft'
+import { SmoothFold } from './ui'
 
 function RosterFold({
   title,
@@ -40,22 +41,98 @@ function RosterFold({
           {open ? '접기' : count != null ? `펼치기 · ${count}명` : '펼치기'}
         </span>
       </button>
-      {open && children}
+      <SmoothFold open={open}>
+        <div className="space-y-2 pt-2">{children}</div>
+      </SmoothFold>
     </div>
   )
 }
 
-const ACTIONS: { kind: StatKind; label: string }[] = [
+const POINT_ACTIONS: { kind: StatKind; label: string }[] = [
   { kind: 'pt1', label: '+1' },
   { kind: 'pt2', label: '+2' },
   { kind: 'pt3', label: '+3' },
   { kind: 'ptm1', label: '-1' },
+]
+
+const PLAYER_ACTIONS: { kind: StatKind; label: string }[] = [
+  ...POINT_ACTIONS,
   { kind: 'foul', label: '파울' },
   { kind: 'reb', label: '리바' },
   { kind: 'ast', label: '어시' },
   { kind: 'stl', label: '스틸' },
   { kind: 'blk', label: '블록' },
 ]
+
+function ScoreCountPad({
+  name,
+  score,
+  fouls,
+  tone,
+  canEdit,
+  busy,
+  fill,
+  onPoint,
+  onFoul,
+}: {
+  name: string
+  score: number
+  fouls: number
+  tone: 'home' | 'away'
+  canEdit: boolean
+  busy: boolean
+  fill?: boolean
+  onPoint: (kind: StatKind) => void
+  onFoul: () => void
+}) {
+  const nameClass = tone === 'home' ? 'text-amber-200' : 'text-sky-200'
+  const foulClass = tone === 'home' ? 'text-amber-100' : 'text-sky-100'
+  return (
+    <div className={`min-w-0 ${fill ? 'flex h-full flex-col justify-center space-y-3' : 'space-y-2.5'}`}>
+      <p className={`font-bold leading-tight ${fill ? 'text-sm md:text-base' : 'text-xs'} ${nameClass}`}>{name}</p>
+      <p
+        className={`font-black tabular-nums leading-none tracking-tight text-white drop-shadow-sm ${
+          fill ? 'text-[clamp(3.25rem,22vh,8rem)]' : 'text-5xl'
+        }`}
+      >
+        {score}
+      </p>
+      {canEdit && (
+        <div className={`grid grid-cols-4 ${fill ? 'gap-1.5' : 'gap-1'}`}>
+          {POINT_ACTIONS.map((item) => (
+            <button
+              key={item.kind}
+              type="button"
+              disabled={busy}
+              className={`rounded-lg font-black ${
+                fill ? 'py-3 text-sm' : 'py-2 text-[11px]'
+              } ${item.kind === 'ptm1' ? 'bg-brand/90 text-white' : 'bg-white text-navy'} disabled:opacity-50`}
+              onClick={() => onPoint(item.kind)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {canEdit ? (
+        <button
+          type="button"
+          disabled={busy}
+          className={`w-full rounded-lg bg-slate-800 font-bold ${foulClass} disabled:opacity-50 ${
+            fill ? 'py-2.5 text-xs' : 'py-2 text-[11px]'
+          }`}
+          onClick={onFoul}
+        >
+          파울 {fouls} · 추가
+        </button>
+      ) : (
+        <p className={`rounded-lg bg-slate-800 text-center font-bold ${foulClass} ${fill ? 'py-2.5 text-xs' : 'py-2 text-[11px]'}`}>
+          파울 {fouls}
+        </p>
+      )}
+    </div>
+  )
+}
 
 export default function GameScoreboard({
   game,
@@ -64,6 +141,7 @@ export default function GameScoreboard({
   ended,
   rotation,
   onChange,
+  layout = 'page',
 }: {
   game: ClubGame
   stats: PlayerStat[]
@@ -71,8 +149,18 @@ export default function GameScoreboard({
   ended?: boolean
   rotation: RotationTeam[]
   onChange: (game: ClubGame, stats: PlayerStat[]) => void
+  layout?: 'page' | 'fill'
 }) {
+  const [busy, setBusy] = useState(false)
+
   if (ended) {
+    if (layout === 'fill') {
+      return (
+        <div className="h-full overflow-auto bg-canvas p-3">
+          <FinishedScoreSheet game={game} rotation={rotation} />
+        </div>
+      )
+    }
     return (
       <div className="space-y-3">
         <FinishedScoreSheet game={game} rotation={rotation} />
@@ -84,9 +172,14 @@ export default function GameScoreboard({
   }
 
   const tap = async (kind: StatKind, team: ScoreSide, player?: { playerKey: string; userId?: string; name: string }) => {
-    if (!canEdit) return
-    const next = await recordGameStat(game, { kind, team, player })
-    onChange(next.game, next.stats)
+    if (!canEdit || busy) return
+    setBusy(true)
+    try {
+      const next = await recordGameStat(game, { kind, team, player })
+      onChange(next.game, next.stats)
+    } finally {
+      setBusy(false)
+    }
   }
 
   const setPeriod = async (period: number) => {
@@ -107,6 +200,8 @@ export default function GameScoreboard({
         game={game}
         stats={stats}
         canEdit={canEdit}
+        busy={busy}
+        fill={layout === 'fill'}
         rotation={rotation}
         onTap={tap}
         onRound={setPeriod}
@@ -118,7 +213,9 @@ export default function GameScoreboard({
     <TwoTeamBoard
       game={game}
       stats={stats}
+      busy={busy}
       canEdit={canEdit}
+      fill={layout === 'fill'}
       rotation={rotation}
       onTap={tap}
       onQuarter={setPeriod}
@@ -217,7 +314,7 @@ function PlayerCard({
       </p>
       {canEdit && (
         <div className="grid grid-cols-4 gap-1">
-          {ACTIONS.map((item) => (
+          {PLAYER_ACTIONS.map((item) => (
             <button
               key={item.kind}
               type="button"
@@ -243,6 +340,8 @@ function TwoTeamBoard({
   game,
   stats,
   canEdit,
+  busy,
+  fill,
   rotation,
   onTap,
   onQuarter,
@@ -251,6 +350,8 @@ function TwoTeamBoard({
   game: ClubGame
   stats: PlayerStat[]
   canEdit: boolean
+  busy: boolean
+  fill?: boolean
   rotation: RotationTeam[]
   onTap: (kind: StatKind, team: ScoreSide, player?: { playerKey: string; userId?: string; name: string }) => Promise<void>
   onQuarter: (quarter: number) => Promise<void>
@@ -274,9 +375,15 @@ function TwoTeamBoard({
   )
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-2xl bg-navy p-5 text-white shadow-[0_8px_24px_rgba(15,23,42,0.28)]">
-        <div className="flex items-center justify-between mb-4">
+    <div className={fill ? 'h-full min-h-0' : 'space-y-3'}>
+      <div
+        className={
+          fill
+            ? 'h-full min-h-0 flex flex-col bg-navy text-white px-[max(12px,env(safe-area-inset-left))] pr-[max(12px,env(safe-area-inset-right))] py-[max(8px,env(safe-area-inset-top))] pb-[max(8px,env(safe-area-inset-bottom))]'
+            : 'rounded-2xl bg-navy p-5 text-white shadow-[0_8px_24px_rgba(15,23,42,0.28)]'
+        }
+      >
+        <div className={`flex items-center justify-between ${fill ? 'mb-2' : 'mb-4'}`}>
           <span
             className={`text-[11px] font-bold tracking-[0.14em] uppercase ${
               game.isLive ? 'text-amber-300' : 'text-slate-300'
@@ -301,18 +408,37 @@ function TwoTeamBoard({
             onAdd={() => void onSeries(addExchangeSeriesGame(game))}
           />
         )}
-        <div className="grid grid-cols-3 items-end text-center gap-2">
-          <div>
-            <p className="text-5xl font-black tabular-nums leading-none tracking-tight text-white drop-shadow-sm">{home}</p>
-            <p className="mt-2 text-xs font-bold text-amber-200">{game.homeName}</p>
-          </div>
-          <p className="pb-2 text-sm font-black text-slate-400">VS</p>
-          <div>
-            <p className="text-5xl font-black tabular-nums leading-none tracking-tight text-white drop-shadow-sm">{away}</p>
-            <p className="mt-2 text-xs font-bold text-sky-200">{game.awayName}</p>
-          </div>
+        <div className={`grid grid-cols-[1fr_auto_1fr] items-stretch text-center gap-2 ${fill ? 'min-h-0 flex-1' : ''}`}>
+          <ScoreCountPad
+            name={shown.homeName}
+            score={home}
+            fouls={shown.fouls[String(shown.currentQuarter)]?.h || 0}
+            tone="home"
+            canEdit={canEdit}
+            busy={busy}
+            fill={fill}
+            onPoint={(kind) => void onTap(kind, 'h')}
+            onFoul={() => void onTap('tfoul', 'h')}
+          />
+          <p className={`text-sm font-black text-slate-400 ${fill ? 'self-center text-xl' : 'pt-8'}`}>VS</p>
+          <ScoreCountPad
+            name={shown.awayName}
+            score={away}
+            fouls={shown.fouls[String(shown.currentQuarter)]?.a || 0}
+            tone="away"
+            canEdit={canEdit}
+            busy={busy}
+            fill={fill}
+            onPoint={(kind) => void onTap(kind, 'a')}
+            onFoul={() => void onTap('tfoul', 'a')}
+          />
         </div>
-        <div className={`grid gap-1.5 mt-5 ${quarters.length === 3 ? 'grid-cols-3' : 'grid-cols-5'}`}>
+        {!fill && (
+          <p className="mt-3 text-center text-[11px] text-white/50">
+            {canEdit ? `${quarterLabel(shown.currentQuarter, shown.quarterCount || 4)} 점수를 바로 카운트합니다.` : '현재 스코어'}
+          </p>
+        )}
+        <div className={`grid gap-1.5 ${fill ? 'mt-2' : 'mt-3'} ${quarters.length === 3 ? 'grid-cols-3' : 'grid-cols-5'}`}>
           {quarters.map((quarter) => (
             <button
               key={quarter}
@@ -330,93 +456,61 @@ function TwoTeamBoard({
             </button>
           ))}
         </div>
-        <div className="grid grid-cols-2 gap-2 mt-3 text-xs font-bold">
-          <p className="rounded-xl bg-slate-800 py-2.5 text-center text-amber-100">
-            {shown.homeName} 파울 {shown.fouls[String(shown.currentQuarter)]?.h || 0}
-          </p>
-          <p className="rounded-xl bg-slate-800 py-2.5 text-center text-sky-100">
-            {shown.awayName} 파울 {shown.fouls[String(shown.currentQuarter)]?.a || 0}
-          </p>
-        </div>
       </div>
 
-      {canEdit && (
-        <div className="bb-card p-4 space-y-3">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wide">
-            터치 기록 · {quarterLabel(game.currentQuarter, game.quarterCount || 4)}
-          </p>
-          {(['h', 'a'] as ScoreSide[]).map((side) => (
-            <div key={side} className="space-y-2">
-              <p className="text-sm font-semibold">{side === 'h' ? game.homeName : game.awayName}</p>
-              <div className="grid grid-cols-4 gap-1.5">
-                {ACTIONS.map((item) => (
-                  <button
-                    key={item.kind}
-                    type="button"
-                    className={`bb-btn-ghost py-2 text-[11px] ${item.kind === 'ptm1' ? 'text-brand' : ''}`}
-                    onClick={() => void onTap(item.kind, side)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-                <button type="button" className="bb-btn-ghost py-2 text-[11px]" onClick={() => void onTap('tfoul', side)}>
-                  팀파울
-                </button>
+      {fill ? null : (
+        <>
+          <RosterFold title="쿼터별 출전 · 순번" count={rotation.reduce((sum, team) => sum + team.ordered.length, 0)}>
+            {rotation.length === 0 && <p className="text-xs text-muted">참석자가 없습니다. 참여 여부를 먼저 선택해 주세요.</p>}
+            {rotation.map((team) => (
+              <div key={team.label} className="space-y-2">
+                {rotation.length > 1 && <p className="text-sm font-semibold">{team.label}</p>}
+                {quarters.map((quarter) => {
+                  const onCourt = team.byQuarter[quarter] || []
+                  const active = quarter === shown.currentQuarter
+                  return (
+                    <div
+                      key={`${team.label}-${quarter}`}
+                      className={`rounded-xl px-3 py-2 ${active ? 'bg-navy text-white' : 'bg-canvas'}`}
+                    >
+                      <p className={`text-[11px] font-semibold mb-1 ${active ? 'text-white/70' : 'text-muted'}`}>
+                        {quarterLabel(quarter, shown.quarterCount || 4)}
+                        {active ? ' · 현재' : ''}
+                      </p>
+                      <p className={`text-xs font-medium leading-relaxed ${active ? 'text-white' : 'text-ink'}`}>
+                        {onCourt.length
+                          ? onCourt.map((player) => `${player.order}번 ${player.name}`).join(' · ')
+                          : '출전 인원이 없습니다.'}
+                      </p>
+                    </div>
+                  )
+                })}
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </RosterFold>
+
+          <RosterFold
+            title={`선수 기록 · ${quarterLabel(shown.currentQuarter, shown.quarterCount || 4)} 순번`}
+            count={currentOnCourt.length}
+          >
+            {allowSeries && series.boards.length > 1 && (
+              <p className="text-[11px] text-muted">선수 기록은 전 경기 합산입니다. 팀 스코어는 경기별로 유지됩니다.</p>
+            )}
+            {currentOnCourt.length === 0 && <p className="text-xs text-muted">이 쿼터 출전 선수가 없습니다.</p>}
+            {currentOnCourt.map((player) => (
+              <PlayerCard
+                key={player.key}
+                player={player}
+                team={player.team}
+                stats={stats}
+                maxPts={maxPts}
+                canEdit={canEdit}
+                onTap={onTap}
+              />
+            ))}
+          </RosterFold>
+        </>
       )}
-
-      <RosterFold title="쿼터별 출전 · 순번" count={rotation.reduce((sum, team) => sum + team.ordered.length, 0)}>
-        {rotation.length === 0 && <p className="text-xs text-muted">참석자가 없습니다. 참여 여부를 먼저 선택해 주세요.</p>}
-        {rotation.map((team) => (
-          <div key={team.label} className="space-y-2">
-            {rotation.length > 1 && <p className="text-sm font-semibold">{team.label}</p>}
-            {quarters.map((quarter) => {
-              const onCourt = team.byQuarter[quarter] || []
-              const active = quarter === shown.currentQuarter
-              return (
-                <div
-                  key={`${team.label}-${quarter}`}
-                  className={`rounded-xl px-3 py-2 ${active ? 'bg-navy text-white' : 'bg-canvas'}`}
-                >
-                  <p className={`text-[11px] font-semibold mb-1 ${active ? 'text-white/70' : 'text-muted'}`}>
-                    {quarterLabel(quarter, shown.quarterCount || 4)}
-                    {active ? ' · 현재' : ''}
-                  </p>
-                  <p className={`text-xs font-medium leading-relaxed ${active ? 'text-white' : 'text-ink'}`}>
-                    {onCourt.length
-                      ? onCourt.map((player) => `${player.order}번 ${player.name}`).join(' · ')
-                      : '출전 인원이 없습니다.'}
-                  </p>
-                </div>
-              )
-            })}
-          </div>
-        ))}
-      </RosterFold>
-
-      <RosterFold
-        title={`선수 기록 · ${quarterLabel(shown.currentQuarter, shown.quarterCount || 4)} 순번`}
-        count={currentOnCourt.length}
-      >
-        {allowSeries && series.boards.length > 1 && (
-          <p className="text-[11px] text-muted">선수 기록은 전 경기 합산입니다. 팀 스코어는 경기별로 유지됩니다.</p>
-        )}
-        {currentOnCourt.length === 0 && <p className="text-xs text-muted">이 쿼터 출전 선수가 없습니다.</p>}
-        {currentOnCourt.map((player) => (
-          <PlayerCard
-            key={player.key}
-            player={player}
-            team={player.team}
-            stats={stats}
-            maxPts={maxPts}
-            canEdit={canEdit}
-            onTap={onTap}
-          />
-        ))}
-      </RosterFold>
     </div>
   )
 }
@@ -425,6 +519,8 @@ function ThreeTeamBoard({
   game,
   stats,
   canEdit,
+  busy,
+  fill,
   rotation,
   onTap,
   onRound,
@@ -432,6 +528,8 @@ function ThreeTeamBoard({
   game: ClubGame
   stats: PlayerStat[]
   canEdit: boolean
+  busy: boolean
+  fill?: boolean
   rotation: RotationTeam[]
   onTap: (kind: StatKind, team: ScoreSide, player?: { playerKey: string; userId?: string; name: string }) => Promise<void>
   onRound: (round: number) => Promise<void>
@@ -454,8 +552,14 @@ function ThreeTeamBoard({
   const goQuarter = (nextQuarter: number) => onRound(packThreeTeamClock(clock.round, nextQuarter))
 
   return (
-    <div className="space-y-3">
-      <section className="rounded-2xl bg-navy p-5 text-white shadow-[0_8px_24px_rgba(15,23,42,0.28)] space-y-4">
+    <div className={fill ? 'h-full min-h-0' : 'space-y-3'}>
+      <section
+        className={
+          fill
+            ? 'h-full min-h-0 flex flex-col bg-navy text-white px-[max(12px,env(safe-area-inset-left))] pr-[max(12px,env(safe-area-inset-right))] py-[max(8px,env(safe-area-inset-top))] pb-[max(8px,env(safe-area-inset-bottom))] space-y-2'
+            : 'rounded-2xl bg-navy p-5 text-white shadow-[0_8px_24px_rgba(15,23,42,0.28)] space-y-4'
+        }
+      >
         <div className="flex items-center justify-between">
           <span
             className={`text-[11px] font-bold tracking-[0.14em] uppercase ${
@@ -466,26 +570,35 @@ function ThreeTeamBoard({
           </span>
           <span className="rounded-full bg-white px-3 py-1 text-sm font-black text-navy">
             {clock.round}라운드 · {quarterLabel(clock.quarter, quarterCount)}
+            {fill && restTeam ? ` · 휴식 ${restTeam.label}` : ''}
           </span>
         </div>
 
-        <p className="text-center text-[11px] font-semibold tracking-wide text-white/50 uppercase">현재 경기</p>
-        <div className="grid grid-cols-3 items-center text-center gap-1">
-          <div>
-            <p className="text-[13px] font-black text-amber-200 leading-tight">{homeTeam.label}</p>
-            <p className="mt-2 text-5xl font-black tabular-nums leading-none">{homeScore}</p>
-            <p className="mt-2 text-[11px] font-bold text-amber-100/80">
-              파울 {readScoreSlot(game.fouls, clock.round, clock.quarter).h}
-            </p>
-          </div>
-          <p className="text-lg font-black text-slate-400">VS</p>
-          <div>
-            <p className="text-[13px] font-black text-sky-200 leading-tight">{awayTeam.label}</p>
-            <p className="mt-2 text-5xl font-black tabular-nums leading-none">{awayScore}</p>
-            <p className="mt-2 text-[11px] font-bold text-sky-100/80">
-              파울 {readScoreSlot(game.fouls, clock.round, clock.quarter).a}
-            </p>
-          </div>
+        {!fill && <p className="text-center text-[11px] font-semibold tracking-wide text-white/50 uppercase">현재 경기</p>}
+        <div className={`grid grid-cols-[1fr_auto_1fr] items-stretch text-center gap-2 ${fill ? 'min-h-0 flex-1' : ''}`}>
+          <ScoreCountPad
+            name={homeTeam.label}
+            score={homeScore}
+            fouls={readScoreSlot(game.fouls, clock.round, clock.quarter).h}
+            tone="home"
+            canEdit={canEdit}
+            busy={busy}
+            fill={fill}
+            onPoint={(kind) => void onTap(kind, 'h')}
+            onFoul={() => void onTap('tfoul', 'h')}
+          />
+          <p className={`text-sm font-black text-slate-400 ${fill ? 'self-center text-xl' : 'pt-8'}`}>VS</p>
+          <ScoreCountPad
+            name={awayTeam.label}
+            score={awayScore}
+            fouls={readScoreSlot(game.fouls, clock.round, clock.quarter).a}
+            tone="away"
+            canEdit={canEdit}
+            busy={busy}
+            fill={fill}
+            onPoint={(kind) => void onTap(kind, 'a')}
+            onFoul={() => void onTap('tfoul', 'a')}
+          />
         </div>
         <div className={`grid gap-1.5 ${quarters.length === 3 ? 'grid-cols-3' : 'grid-cols-5'}`}>
           {quarters.map((quarter) => {
@@ -508,11 +621,36 @@ function ThreeTeamBoard({
             )
           })}
         </div>
-        <p className="text-center text-[11px] text-white/50">
-          이 라운드는 {quarterCount}쿼터제로 진행합니다. 점수는 라운드 합계입니다.
-        </p>
+        {!fill && (
+          <p className="text-center text-[11px] text-white/50">
+            이 라운드는 {quarterCount}쿼터제로 진행합니다. 점수는 라운드 합계입니다.
+          </p>
+        )}
+        {fill && (
+          <div className="grid grid-cols-3 gap-1.5">
+            {THREE_TEAM_ROUNDS.map((item) => {
+              const slot = threeTeamMatchup(item)
+              const active = item === clock.round
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  disabled={!canEdit}
+                  onClick={() => void goRound(item)}
+                  className={`rounded-xl py-2 px-1 text-[11px] font-bold ${
+                    active ? 'bg-brand text-white' : 'bg-slate-800 text-slate-100'
+                  }`}
+                >
+                  {item}R {rotation[slot.home].label.replace('팀', '')} vs {rotation[slot.away].label.replace('팀', '')}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </section>
 
+      {fill ? null : (
+      <>
       <section className="rounded-2xl border-2 border-amber-300 bg-amber-50 px-5 py-4 space-y-2">
         <p className="text-[11px] font-bold tracking-[0.16em] uppercase text-amber-800">휴식</p>
         <p className="text-2xl font-black text-ink">{restTeam.label}</p>
@@ -572,37 +710,6 @@ function ThreeTeamBoard({
         })}
       </section>
 
-      {canEdit && (
-        <div className="bb-card p-4 space-y-3">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wide">
-            터치 기록 · {clock.round}라운드 {quarterLabel(clock.quarter, quarterCount)}
-          </p>
-          {([
-            ['h', homeTeam.label],
-            ['a', awayTeam.label],
-          ] as const).map(([side, label]) => (
-            <div key={side} className="space-y-2">
-              <p className="text-sm font-semibold">{label}</p>
-              <div className="grid grid-cols-4 gap-1.5">
-                {ACTIONS.map((item) => (
-                  <button
-                    key={item.kind}
-                    type="button"
-                    className={`bb-btn-ghost py-2 text-[11px] ${item.kind === 'ptm1' ? 'text-brand' : ''}`}
-                    onClick={() => void onTap(item.kind, side)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-                <button type="button" className="bb-btn-ghost py-2 text-[11px]" onClick={() => void onTap('tfoul', side)}>
-                  팀파울
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
       <RosterFold
         title={`출전 선수 · ${homeTeam.label} vs ${awayTeam.label} · ${quarterLabel(clock.quarter, quarterCount)}`}
         count={playingPlayers.length}
@@ -620,6 +727,8 @@ function ThreeTeamBoard({
           />
         ))}
       </RosterFold>
+      </>
+      )}
     </div>
   )
 }

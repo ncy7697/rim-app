@@ -70,6 +70,7 @@ export type ClubGame = {
   eventSetCount?: number
   eventAttemptCount?: number
   eventBoard?: EventBoard
+  recommendedTacticId?: string
 }
 
 export type GameRsvp = { userId: string; name: string; status: RsvpStatus }
@@ -274,6 +275,7 @@ function overlayMatchFields(game: ClubGame, extra?: Partial<ClubGame>): ClubGame
     eventSetCount: extra?.eventSetCount ?? game.eventSetCount,
     eventAttemptCount: extra?.eventAttemptCount ?? game.eventAttemptCount,
     eventBoard: extra?.eventBoard || game.eventBoard,
+    recommendedTacticId: extra?.recommendedTacticId || game.recommendedTacticId,
   }
 }
 
@@ -374,6 +376,7 @@ function rowToGame(row: any): ClubGame {
       : undefined,
     eventAttemptCount: row.event_attempt_count || row.eventAttemptCount ? clampEventAttempts(row.event_attempt_count || row.eventAttemptCount) : undefined,
     eventBoard: row.event_board || row.eventBoard || undefined,
+    recommendedTacticId: row.recommended_tactic || row.recommendedTacticId || undefined,
   }
 }
 
@@ -491,9 +494,10 @@ export async function saveClubGame(game: ClubGame, notify: { clubName: string; m
       currentSet: 1,
       players: [],
     }) : null,
+    recommended_tactic: next.matchKind === 'event' ? null : next.recommendedTacticId || null,
   }
   const { error } = await supabase.from('club_games').upsert(payload)
-  if (error && /quarter_count|match_kind|opponent_contact|opponent_phone|opponent_region|opponent_club_id|proposal_id|event_type|event_set_count|event_attempt_count|event_board/i.test(error.message || '')) {
+  if (error && /quarter_count|match_kind|opponent_contact|opponent_phone|opponent_region|opponent_club_id|proposal_id|event_type|event_set_count|event_attempt_count|event_board|recommended_tactic/i.test(error.message || '')) {
     const {
       quarter_count: _quarterCount,
       match_kind: _matchKind,
@@ -506,6 +510,7 @@ export async function saveClubGame(game: ClubGame, notify: { clubName: string; m
       event_set_count: _eventSets,
       event_attempt_count: _eventAttempts,
       event_board: _eventBoard,
+      recommended_tactic: _recommendedTactic,
       ...withoutExtra
     } = payload as typeof payload & {
       quarter_count?: number
@@ -519,6 +524,7 @@ export async function saveClubGame(game: ClubGame, notify: { clubName: string; m
       event_set_count?: number | null
       event_attempt_count?: number | null
       event_board?: EventBoard | null
+      recommended_tactic?: string | null
     }
     const retry = await supabase.from('club_games').upsert(withoutExtra)
     if (retry.error && !isMissingSchema(retry.error)) throw retry.error

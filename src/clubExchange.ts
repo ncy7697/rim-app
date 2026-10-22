@@ -8,6 +8,7 @@ import {
   saveClubGame,
   type ClubGame,
 } from './clubGames'
+import { pickRecommendedTactic } from './gameTactics'
 
 function isMissingSchema(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false
@@ -410,6 +411,7 @@ export async function confirmExchangeProposal(params: {
     updatedAt: new Date().toISOString(),
     opponentClubId: proposal.toClubId,
     proposalId: proposal.id,
+    recommendedTacticId: pickRecommendedTactic().id,
   }
   const toGame: ClubGame = {
     ...fromGame,

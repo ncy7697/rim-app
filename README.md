@@ -36,6 +36,11 @@ npm run dev
 ```bash
 npm run build
 npx cap sync android
+
+cd android
+./gradlew.bat assembleDebug     # 디버그 APK 생성
+./gradlew assembleRelease       # 완성본 APK 생성
+./gradlew bundleRelease         # AAB 생성 (Google Play 업로드 권장)
 ```
 
 Android Studio에서 `android` 폴더를 열거나 Gradle로 디버그 APK를 만듭니다.

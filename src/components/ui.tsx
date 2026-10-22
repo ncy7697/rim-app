@@ -32,6 +32,32 @@ export function Spinner({ label }: { label: string }) {
   );
 }
 
+export function SmoothFold({
+  open,
+  children,
+}: {
+  open: boolean
+  children: ReactNode
+}) {
+  return (
+    <div
+      className={`grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+      }`}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div
+          className={`origin-top transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            open ? 'opacity-100 translate-y-0' : 'pointer-events-none -translate-y-1 opacity-0'
+          }`}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function EmptyCard({
   title,
   description,
