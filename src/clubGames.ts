@@ -75,6 +75,14 @@ export type ClubGame = {
 
 export type GameRsvp = { userId: string; name: string; status: RsvpStatus }
 export type GameVideo = { id: string; url: string; title: string }
+export type GameVideoComment = {
+  id: string
+  videoId: string
+  userId: string
+  authorName: string
+  body: string
+  createdAt: string
+}
 export type PlayerStat = {
   playerKey: string
   userId?: string
@@ -177,8 +185,12 @@ export function withScoreSeries(game: ClubGame, series: ScoreSeries): ClubGame {
   }
 }
 
+export function allowsScoreSeries(game: Pick<ClubGame, 'matchKind'>) {
+  return game.matchKind === 'exchange' || game.matchKind === 'internal'
+}
+
 export function syncActiveSeriesBoard(game: ClubGame): ClubGame {
-  if (game.matchKind !== 'exchange') return { ...game, scores: { ...game.scores } }
+  if (!allowsScoreSeries(game)) return { ...game, scores: { ...game.scores } }
   const series = readScoreSeries(game)
   series.boards[series.active] = {
     scores: cleanQuarterMap(game.scores),
@@ -236,6 +248,9 @@ function storageRsvp(gameId: string) {
 }
 function storageVideos(gameId: string) {
   return `bb_game_videos_${gameId}`
+}
+function storageVideoComments(gameId: string) {
+  return `bb_game_video_comments_${gameId}`
 }
 function storageStats(gameId: string) {
   return `bb_game_stats_${gameId}`
@@ -752,6 +767,73 @@ export async function saveVideos(gameId: string, videos: GameVideo[]) {
     }))
   )
   if (error) throw error
+}
+
+function rowToVideoComment(row: any): GameVideoComment {
+  return {
+    id: row.id,
+    videoId: row.video_id || row.videoId,
+    userId: row.user_id || row.userId,
+    authorName: row.author_name || row.authorName || '회원',
+    body: row.body || '',
+    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+  }
+}
+
+export async function listVideoComments(gameId: string): Promise<GameVideoComment[]> {
+  const { data, error } = await supabase
+    .from('club_game_video_comments')
+    .select('*')
+    .eq('game_id', gameId)
+    .order('created_at', { ascending: true })
+  if (error && !isMissingSchema(error)) throw error
+  if (isMissingSchema(error) || !data) {
+    return JSON.parse(localStorage.getItem(storageVideoComments(gameId)) || '[]')
+  }
+  return data.map(rowToVideoComment)
+}
+
+export async function addVideoComment(input: {
+  gameId: string
+  videoId: string
+  userId: string
+  authorName: string
+  body: string
+}): Promise<GameVideoComment> {
+  const body = input.body.trim()
+  if (!body) throw new Error('댓글을 입력해 주세요.')
+  const next: GameVideoComment = {
+    id: newId(),
+    videoId: input.videoId,
+    userId: input.userId,
+    authorName: input.authorName.trim() || '회원',
+    body,
+    createdAt: new Date().toISOString(),
+  }
+  const { error } = await supabase.from('club_game_video_comments').insert({
+    id: next.id,
+    game_id: input.gameId,
+    video_id: input.videoId,
+    user_id: input.userId,
+    author_name: next.authorName,
+    body: next.body,
+    created_at: next.createdAt,
+  })
+  if (error && !isMissingSchema(error)) throw error
+  if (isMissingSchema(error)) {
+    const list = await listVideoComments(input.gameId)
+    localStorage.setItem(storageVideoComments(input.gameId), JSON.stringify([...list, next]))
+  }
+  return next
+}
+
+export async function removeVideoComment(gameId: string, commentId: string) {
+  const { error } = await supabase.from('club_game_video_comments').delete().eq('id', commentId)
+  if (error && !isMissingSchema(error)) throw error
+  if (isMissingSchema(error)) {
+    const list = (await listVideoComments(gameId)).filter((item) => item.id !== commentId)
+    localStorage.setItem(storageVideoComments(gameId), JSON.stringify(list))
+  }
 }
 
 export async function listPlayerStats(gameId: string): Promise<PlayerStat[]> {

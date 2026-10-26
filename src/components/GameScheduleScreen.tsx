@@ -15,7 +15,10 @@ import {
   listClubGames,
   listPlayerStats,
   listRsvps,
+  addVideoComment,
+  listVideoComments,
   listVideos,
+  removeVideoComment,
   otQuarter,
   saveClubGame,
   saveVideos,
@@ -28,6 +31,7 @@ import {
   type GameClubMember,
   type GameMatchKind,
   type GameVideo,
+  type GameVideoComment,
   type PlayerStat,
   type QuarterCount,
   type RsvpStatus,
@@ -110,6 +114,9 @@ export default function GameScheduleScreen({
   const [rsvps, setRsvps] = useState<Record<string, RsvpStatus>>({})
   const [members, setMembers] = useState<GameClubMember[]>([])
   const [videos, setVideos] = useState<GameVideo[]>([])
+  const [videoComments, setVideoComments] = useState<GameVideoComment[]>([])
+  const [commentDraft, setCommentDraft] = useState<Record<string, string>>({})
+  const [commentBusy, setCommentBusy] = useState(false)
   const [stats, setStats] = useState<PlayerStat[]>([])
   const [lineup, setLineup] = useState<LineupBoard | null>(null)
   const [lineupTeam, setLineupTeam] = useState(0)
@@ -259,13 +266,17 @@ export default function GameScheduleScreen({
       setLineup(null)
       return
     }
-    void Promise.all([listRsvps(selectedId), listVideos(selectedId), listPlayerStats(selectedId)]).then(
-      ([nextRsvp, nextVideos, nextStats]) => {
-        setRsvps(nextRsvp)
-        setVideos(nextVideos)
-        setStats(nextStats)
-      }
-    )
+    void Promise.all([
+      listRsvps(selectedId),
+      listVideos(selectedId),
+      listPlayerStats(selectedId),
+      listVideoComments(selectedId),
+    ]).then(([nextRsvp, nextVideos, nextStats, nextComments]) => {
+      setRsvps(nextRsvp)
+      setVideos(nextVideos)
+      setStats(nextStats)
+      setVideoComments(nextComments)
+    })
     if (view !== 'teams') void refreshLineup(selectedId)
   }, [selectedId, view, clubId])
 
@@ -469,8 +480,45 @@ export default function GameScheduleScreen({
   const removeVideo = async (id: string) => {
     if (!selected) return
     const next = videos.filter((item) => item.id !== id)
+    const leftover = videoComments.filter((item) => item.videoId !== id)
     await saveVideos(selected.id, next)
+    await Promise.all(
+      videoComments.filter((item) => item.videoId === id).map((item) => removeVideoComment(selected.id, item.id))
+    )
     setVideos(next)
+    setVideoComments(leftover)
+  }
+
+  const postVideoComment = async (videoId: string) => {
+    if (!selected || !userId || !isPastGame(selected)) return
+    const body = (commentDraft[videoId] || '').trim()
+    if (!body) {
+      setMessage('댓글을 입력해 주세요.')
+      return
+    }
+    setCommentBusy(true)
+    try {
+      const saved = await addVideoComment({
+        gameId: selected.id,
+        videoId,
+        userId,
+        authorName: members.find((item) => item.id === userId)?.name || '회원',
+        body,
+      })
+      setVideoComments((prev) => [...prev, saved])
+      setCommentDraft((prev) => ({ ...prev, [videoId]: '' }))
+      setMessage('')
+    } catch (err: any) {
+      setMessage(err.message || '댓글을 저장하지 못했습니다.')
+    } finally {
+      setCommentBusy(false)
+    }
+  }
+
+  const deleteVideoComment = async (commentId: string) => {
+    if (!selected) return
+    await removeVideoComment(selected.id, commentId)
+    setVideoComments((prev) => prev.filter((item) => item.id !== commentId))
   }
 
   const goingKeys = useMemo(
@@ -525,7 +573,7 @@ export default function GameScheduleScreen({
         <GameScoreboard
           game={selected}
           stats={stats}
-          canEdit={canEdit && !isPastGame(selected)}
+          canEdit={canEdit}
           ended={isPastGame(selected)}
           rotation={rotationTeams}
           layout="fill"
@@ -1087,7 +1135,7 @@ export default function GameScheduleScreen({
             <GameScoreboard
               game={selected}
               stats={stats}
-              canEdit={canEdit && !isPastGame(selected)}
+              canEdit={canEdit}
               ended={isPastGame(selected)}
               rotation={rotationTeams}
               onChange={(nextGame, nextStats) => {
@@ -1108,6 +1156,7 @@ export default function GameScheduleScreen({
               {videos.length === 0 && <p className="text-xs text-muted">등록된 영상이 없습니다.</p>}
               {videos.map((video) => {
                 const embed = youtubeEmbed(video.url)
+                const comments = videoComments.filter((item) => item.videoId === video.id)
                 return (
                   <div key={video.id} className="space-y-2">
                     <div className="flex justify-between gap-2 items-center">
@@ -1123,6 +1172,18 @@ export default function GameScheduleScreen({
                     ) : (
                       <p className="text-xs text-muted">이 주소는 미리보기를 열 수 없습니다.</p>
                     )}
+                    {selected && isPastGame(selected) && (
+                      <VideoCommentPanel
+                        comments={comments}
+                        draft={commentDraft[video.id] || ''}
+                        busy={commentBusy}
+                        userId={userId}
+                        canModerate={canEdit}
+                        onDraftChange={(value) => setCommentDraft((prev) => ({ ...prev, [video.id]: value }))}
+                        onSubmit={() => void postVideoComment(video.id)}
+                        onDelete={(commentId) => void deleteVideoComment(commentId)}
+                      />
+                    )}
                   </div>
                 )
               })}
@@ -1130,6 +1191,87 @@ export default function GameScheduleScreen({
           </>
         )}
       </main>
+    </div>
+  )
+}
+
+function VideoCommentPanel({
+  comments,
+  draft,
+  busy,
+  userId,
+  canModerate,
+  onDraftChange,
+  onSubmit,
+  onDelete,
+}: {
+  comments: GameVideoComment[]
+  draft: string
+  busy: boolean
+  userId?: string
+  canModerate: boolean
+  onDraftChange: (value: string) => void
+  onSubmit: () => void
+  onDelete: (commentId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rounded-xl border border-line bg-canvas px-3 py-2.5">
+      <button
+        type="button"
+        className="w-full flex items-center justify-between gap-2 text-left"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <p className="text-[11px] font-semibold text-muted">댓글 {comments.length}</p>
+        <span className="text-[11px] font-semibold text-navy shrink-0">{open ? '접기' : '펼치기'}</span>
+      </button>
+      <SmoothFold open={open}>
+        <div className="space-y-2 pt-2">
+          {comments.length === 0 && (
+            <p className="text-[11px] text-muted">아직 댓글이 없습니다. 영상에 대한 소감을 남겨 주세요.</p>
+          )}
+          {comments.map((item) => (
+            <div key={item.id} className="rounded-lg bg-white border border-line px-2.5 py-2">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[11px] font-semibold text-navy">{item.authorName}</p>
+                {(canModerate || item.userId === userId) && (
+                  <button
+                    type="button"
+                    className="text-[10px] font-semibold text-rose-700"
+                    onClick={() => onDelete(item.id)}
+                  >
+                    삭제
+                  </button>
+                )}
+              </div>
+              <p className="text-sm mt-0.5 whitespace-pre-line">{item.body}</p>
+              <p className="text-[10px] text-muted mt-1">{item.createdAt.slice(0, 16).replace('T', ' ')}</p>
+            </div>
+          ))}
+          {userId ? (
+            <div className="flex gap-2">
+              <input
+                className="bb-input"
+                placeholder="영상에 댓글을 남겨 주세요"
+                value={draft}
+                onChange={(e) => onDraftChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    onSubmit()
+                  }
+                }}
+              />
+              <button type="button" className="bb-btn-ghost shrink-0" disabled={busy} onClick={onSubmit}>
+                등록
+              </button>
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted">로그인하면 댓글을 남길 수 있습니다.</p>
+          )}
+        </div>
+      </SmoothFold>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import {
   MAX_EXCHANGE_SERIES,
   addExchangeSeriesGame,
+  allowsScoreSeries,
   packThreeTeamClock,
   parseThreeTeamClock,
   quarterLabel,
@@ -153,7 +154,7 @@ export default function GameScoreboard({
 }) {
   const [busy, setBusy] = useState(false)
 
-  if (ended) {
+  if (ended && !canEdit) {
     if (layout === 'fill') {
       return (
         <div className="h-full overflow-auto bg-canvas p-3">
@@ -194,8 +195,8 @@ export default function GameScoreboard({
     onChange(saved, stats)
   }
 
-  if (rotation.length === 3) {
-    return (
+  const board =
+    rotation.length === 3 ? (
       <ThreeTeamBoard
         game={game}
         stats={stats}
@@ -206,22 +207,30 @@ export default function GameScoreboard({
         onTap={tap}
         onRound={setPeriod}
       />
+    ) : (
+      <TwoTeamBoard
+        game={game}
+        stats={stats}
+        busy={busy}
+        canEdit={canEdit}
+        fill={layout === 'fill'}
+        rotation={rotation}
+        onTap={tap}
+        onQuarter={setPeriod}
+        onSeries={setSeriesGame}
+      />
+    )
+
+  if (ended && canEdit && layout !== 'fill') {
+    return (
+      <div className="space-y-3">
+        <p className="text-[11px] text-muted">지난 경기입니다. 감독·코치는 점수를 수정할 수 있습니다.</p>
+        {board}
+      </div>
     )
   }
 
-  return (
-    <TwoTeamBoard
-      game={game}
-      stats={stats}
-      busy={busy}
-      canEdit={canEdit}
-      fill={layout === 'fill'}
-      rotation={rotation}
-      onTap={tap}
-      onQuarter={setPeriod}
-      onSeries={setSeriesGame}
-    />
-  )
+  return board
 }
 
 function ExchangeSeriesBar({
@@ -367,7 +376,7 @@ function TwoTeamBoard({
   const away = totalScore(shown.scores, 'a', shown.quarterCount || 4)
   const maxPts = Math.max(1, ...stats.map((item) => item.pts))
   const quarters = visibleQuarters(shown.quarterCount || 4)
-  const allowSeries = game.matchKind === 'exchange'
+  const allowSeries = allowsScoreSeries(game)
   const displaySeries =
     !canEdit && previewIndex != null ? { ...series, active: previewIndex } : series
   const currentOnCourt = rotation.flatMap((team) =>
@@ -801,9 +810,9 @@ function FinishedScoreSheet({ game, rotation }: { game: ClubGame; rotation: Rota
   }
 
   const series = readScoreSeries(game)
-  const boards = game.matchKind === 'exchange' ? series.boards : [series.boards[series.active] || series.boards[0]]
+  const boards = allowsScoreSeries(game) ? series.boards : [series.boards[series.active] || series.boards[0]]
 
-  if (game.matchKind === 'exchange') {
+  if (allowsScoreSeries(game) && boards.length > 1) {
     return <ExchangeFinishedSeriesSheet game={game} boards={boards} quarterCount={quarterCount} quarters={quarters} />
   }
 
@@ -857,7 +866,9 @@ function ExchangeFinishedSeriesSheet({
   return (
     <section className="space-y-3">
       <div className="rounded-2xl bg-navy px-5 py-4 text-white">
-        <p className="text-[11px] font-bold tracking-[0.16em] uppercase text-white/50">교류전 결과</p>
+        <p className="text-[11px] font-bold tracking-[0.16em] uppercase text-white/50">
+          {game.matchKind === 'exchange' ? '교류전 결과' : '자체전 결과'}
+        </p>
         <p className="text-lg font-black mt-1">
           {boards.length}경기 · {quarterCount}쿼터
         </p>
