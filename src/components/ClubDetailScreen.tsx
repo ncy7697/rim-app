@@ -30,6 +30,8 @@ interface ClubDetailScreenProps {
   onOpenTeams?: (clubId: string, canEdit: boolean) => void;
   onOpenGames?: (clubId: string, options?: { gameId?: string; canEdit?: boolean }) => void;
   onOpenOps?: (clubId: string, options?: { canEdit?: boolean }) => void;
+  onOpenMessages?: (clubId: string) => void;
+  onOpenPolls?: (clubId: string) => void;
   onClubClosed?: () => void;
 }
 
@@ -67,6 +69,8 @@ export default function ClubDetailScreen({
   onOpenTeams,
   onOpenGames,
   onOpenOps,
+  onOpenMessages,
+  onOpenPolls,
   onClubClosed,
 }: ClubDetailScreenProps) {
   const [club, setClub] = useState<ClubInfo | null>(null);
@@ -335,6 +339,24 @@ export default function ClubDetailScreen({
               <p className="text-sm font-semibold mt-1">경기 일정 · 스코어보드 · 영상</p>
               <p className="text-[11px] text-muted mt-0.5">참여 여부를 선택하고 기록을 확인하세요</p>
             </button>
+            <button
+              type="button"
+              className="bb-card w-full p-4 text-left"
+              onClick={() => guardUse(() => onOpenMessages?.(clubId))}
+            >
+              <p className="text-[11px] font-semibold tracking-wide text-muted uppercase">편지</p>
+              <p className="text-sm font-semibold mt-1">멤버에게 편지 보내기</p>
+              <p className="text-[11px] text-muted mt-0.5">확인 후 답장 · 30일 뒤 자동 삭제</p>
+            </button>
+            <button
+              type="button"
+              className="bb-card w-full p-4 text-left"
+              onClick={() => guardUse(() => onOpenPolls?.(clubId))}
+            >
+              <p className="text-[11px] font-semibold tracking-wide text-muted uppercase">투표</p>
+              <p className="text-sm font-semibold mt-1">일정·장소·이벤트 투표</p>
+              <p className="text-[11px] text-muted mt-0.5">찬반·단일·다중·순위 · 익명 지원</p>
+            </button>
           </div>
         )}
 
@@ -434,27 +456,41 @@ export default function ClubDetailScreen({
         )}
 
         {membershipStatus === 'leader' && (
-          <div className="flex gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => guardUse(() => onOpenManageScreen(clubId))}
-              className="bb-btn-ghost flex-1"
+              className="bb-btn-ghost"
             >
               멤버
             </button>
             <button
               type="button"
               onClick={() => guardUse(() => onOpenOps?.(clubId, { canEdit: true }))}
-              className="bb-btn-ghost flex-1"
+              className="bb-btn-ghost"
             >
               운영
             </button>
             <button
               type="button"
               onClick={() => guardUse(() => onOpenGames?.(clubId, { canEdit: true }))}
-              className="bb-btn-primary flex-1"
+              className="bb-btn-primary"
             >
               경기
+            </button>
+            <button
+              type="button"
+              onClick={() => guardUse(() => onOpenMessages?.(clubId))}
+              className="bb-btn-ghost"
+            >
+              편지
+            </button>
+            <button
+              type="button"
+              onClick={() => guardUse(() => onOpenPolls?.(clubId))}
+              className="bb-btn-ghost"
+            >
+              투표
             </button>
           </div>
         )}
@@ -494,6 +530,12 @@ export default function ClubDetailScreen({
             </button>
             <button type="button" className="bb-btn-ghost w-full" onClick={() => guardUse(() => onOpenTeams?.(clubId, false))}>
               오늘 라인업
+            </button>
+            <button type="button" className="bb-btn-ghost w-full" onClick={() => guardUse(() => onOpenMessages?.(clubId))}>
+              편지
+            </button>
+            <button type="button" className="bb-btn-ghost w-full" onClick={() => guardUse(() => onOpenPolls?.(clubId))}>
+              투표
             </button>
             <div className="w-full py-3.5 bg-emerald-50 text-emerald-800 text-center font-semibold text-sm rounded-xl border border-emerald-100">
               가입된 회원입니다

@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient'
 import { BackButton, EmptyCard, Spinner } from './ui'
 import { WEEKDAYS, clubRowToSettings } from '../clubSettings'
 import ClubLedgerPanel from './ClubLedgerPanel'
+import ClubDuesPanel from './ClubDuesPanel'
 import {
   addDays,
   bookingStatusLabel,
@@ -28,7 +29,7 @@ import {
 } from '../clubOps'
 
 type RangeMode = 'week' | 'month'
-type OpsTab = 'schedule' | 'venues' | 'ledger' | 'receipts'
+type OpsTab = 'schedule' | 'venues' | 'dues' | 'ledger' | 'receipts'
 
 const emptyVenue = (clubId: string): ClubVenue => ({
   id: '',
@@ -261,12 +262,13 @@ export default function ClubOpsScreen({
       <main className="p-5 space-y-3">
         {message && <p className="text-xs text-navy bg-white border border-line rounded-xl px-3 py-2">{message}</p>}
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className={`grid gap-2 ${canEdit ? 'grid-cols-2' : 'grid-cols-3'}`}>
           {(
             (canEdit
               ? [
                   ['schedule', '운동 일정'],
                   ['venues', '대관 · 약도'],
+                  ['dues', '회비 납입'],
                   ['ledger', '장부'],
                 ]
               : [
@@ -611,6 +613,10 @@ export default function ClubOpsScreen({
               })
             )}
           </>
+        )}
+
+        {tab === 'dues' && canEdit && (
+          <ClubDuesPanel clubId={clubId} clubName={clubName} />
         )}
 
         {tab === 'ledger' && canEdit && (

@@ -369,6 +369,32 @@ export async function saveClubRoster(clubId: string, roster: ClubRoster): Promis
   if (error) throw error
 }
 
+export async function saveClubDues(
+  clubId: string,
+  userId: string,
+  monthKey: string,
+  status: DuesStatus
+): Promise<void> {
+  const payload = {
+    club_id: clubId,
+    user_id: userId,
+    month_key: monthKey,
+    status,
+    updated_at: new Date().toISOString(),
+  }
+  const { error } = await supabase.from('club_dues').upsert(payload, { onConflict: 'club_id,user_id,month_key' })
+  if (error && !isMissingSchema(error)) throw error
+  if (!error) return
+
+  const current = await loadClubDescription(clubId)
+  const roster = parseClubRoster(current)
+  const record = roster.members[userId] || defaultMemberRecord()
+  roster.members[userId] = { ...record, dues: { ...record.dues, [monthKey]: status } }
+  const next = writeRosterDescription(current, roster)
+  const update = await supabase.from('clubs').update({ description: next }).eq('id', clubId)
+  if (update.error) throw update.error
+}
+
 /** 경기·연습 세션 한 건만 저장. 같은 날 다른 세션이 있어도 id 기준으로 추가한다. */
 export async function ensurePracticeSession(params: {
   clubId: string

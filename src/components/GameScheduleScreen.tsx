@@ -280,6 +280,18 @@ export default function GameScheduleScreen({
     if (view !== 'teams') void refreshLineup(selectedId)
   }, [selectedId, view, clubId])
 
+  useEffect(() => {
+    if (!selected || selected.matchKind === 'event' || findTactic(selected.recommendedTacticId)) return
+    const next = {
+      ...selected,
+      recommendedTacticId: pickRecommendedTactic(
+        games.map((item) => item.recommendedTacticId || '').filter(Boolean)
+      ).id,
+    }
+    setGames((prev) => prev.map((item) => (item.id === next.id ? next : item)))
+    void saveClubGame(next, null)
+  }, [selected?.id, selected?.matchKind, selected?.recommendedTacticId])
+
   const openCreate = () => {
     setForm({
       title: '',
@@ -1364,6 +1376,7 @@ function TacticRecommendCard({
   onRefresh?: () => void
 }) {
   if (!tactic) return null
+  const embed = youtubeEmbed(tactic.youtubeUrl)
   return (
     <div className="rounded-xl border border-navy/15 bg-navy/[0.04] px-3.5 py-3 space-y-1.5">
       <div className="flex items-center justify-between gap-2">
@@ -1379,6 +1392,17 @@ function TacticRecommendCard({
         {tactic.categoryLabel} · {difficultyLabel(tactic.difficulty)}
       </p>
       <p className="text-xs leading-relaxed text-ink/80">{tactic.summary}</p>
+      {embed && (
+        <div className="aspect-video overflow-hidden rounded-xl border border-line bg-black">
+          <iframe
+            title={`${tactic.name} 전술 영상`}
+            src={embed}
+            className="h-full w-full"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      )}
     </div>
   )
 }

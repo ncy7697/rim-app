@@ -9,6 +9,8 @@ import ClubManageScreen from './ClubManageScreen';
 import TeamComposeScreen from './TeamComposeScreen';
 import GameScheduleScreen from './GameScheduleScreen';
 import ClubOpsScreen from './ClubOpsScreen';
+import ClubMessagesScreen from './ClubMessagesScreen';
+import ClubPollsScreen from './ClubPollsScreen';
 import PlatformAdminScreen from './PlatformAdminScreen';
 import NotificationBell from './NotificationBell';
 import { BrandMark, EmptyCard, IconClub, IconHome, IconUser, Spinner } from './ui';
@@ -68,7 +70,7 @@ interface MyClubSummary {
 
 export default function MainScreen() {
   const [activeTab, setActiveTab] = useState<'home' | 'myClub' | 'profile'>('home');
-  const [viewState, setViewState] = useState<'main' | 'login' | 'register' | 'createClub' | 'clubDetail' | 'manage' | 'teams' | 'games' | 'ops' | 'platformAdmin'>('main');
+  const [viewState, setViewState] = useState<'main' | 'login' | 'register' | 'createClub' | 'clubDetail' | 'manage' | 'teams' | 'games' | 'ops' | 'messages' | 'polls' | 'platformAdmin'>('main');
   const [opsCanEdit, setOpsCanEdit] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [clubs, setClubs] = useState<Club[]>([]);
@@ -390,6 +392,18 @@ export default function MainScreen() {
     setViewState('games');
   };
 
+  const handleOpenMessages = async (clubId: string) => {
+    if (!(await ensureClubActive(clubId))) return;
+    setSelectedClubId(clubId);
+    setViewState('messages');
+  };
+
+  const handleOpenPolls = async (clubId: string) => {
+    if (!(await ensureClubActive(clubId))) return;
+    setSelectedClubId(clubId);
+    setViewState('polls');
+  };
+
   const handleClubClosed = () => {
     setSelectedClubId(null);
     setViewState('main');
@@ -551,6 +565,8 @@ export default function MainScreen() {
         onOpenTeams={handleOpenTeams}
         onOpenGames={handleOpenGames}
         onOpenOps={handleOpenOps}
+        onOpenMessages={handleOpenMessages}
+        onOpenPolls={handleOpenPolls}
         onClubClosed={handleClubClosed}
       />
     );
@@ -601,6 +617,33 @@ export default function MainScreen() {
         canEdit={gamesCanEdit}
         initialGameId={selectedGameId}
         initialProposalId={selectedProposalId}
+        onBack={() => setViewState('clubDetail')}
+      />
+    );
+  }
+
+  if (viewState === 'messages' && selectedClubId && currentUser) {
+    const clubName = clubs.find((item) => item.id === selectedClubId)?.name || myClubs.find((item) => item.id === selectedClubId)?.name;
+    return withNav(
+      <ClubMessagesScreen
+        clubId={selectedClubId}
+        clubName={clubName}
+        userId={currentUser.id}
+        userName={currentUser.name}
+        onBack={() => setViewState('clubDetail')}
+      />
+    );
+  }
+
+  if (viewState === 'polls' && selectedClubId && currentUser) {
+    const clubName = clubs.find((item) => item.id === selectedClubId)?.name || myClubs.find((item) => item.id === selectedClubId)?.name;
+    const userRole = myClubs.find((item) => item.id === selectedClubId)?.role;
+    return withNav(
+      <ClubPollsScreen
+        clubId={selectedClubId}
+        clubName={clubName}
+        userId={currentUser.id}
+        userRole={userRole}
         onBack={() => setViewState('clubDetail')}
       />
     );
@@ -766,6 +809,8 @@ export default function MainScreen() {
                 onOpenTeams={handleOpenTeams}
                 onOpenGames={handleOpenGames}
                 onOpenOps={handleOpenOps}
+                onOpenMessages={handleOpenMessages}
+                onOpenPolls={handleOpenPolls}
                 onClubClosed={handleClubClosed}
               />
             ) : (
